@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Incidents du réseau de métro de Montréal</title>
+<meta name="description" content="Tableau de bord des incidents du réseau de métro de Montréal : où, quand et pourquoi les trains s’arrêtent.">
+<meta name="theme-color" content="#101114">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Schibsted+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#map">Aller à la carte</a>
+
+<main class="app">
+  <p class="error" id="error" hidden>Données introuvables. Lancez <code>python -m pannes</code>.</p>
+
+  <section class="panel dark board-panel" aria-label="Chiffres de la sélection">
+    <h1 class="board-title"><span class="title-text">Incidents du métro de Montréal</span></h1>
+    <div class="board" id="board" role="img"></div>
+  </section>
+
+  <div class="grid">
+    <section class="panel panel-map">
+      <div class="map-wrap">
+        <div id="map" role="region" aria-label="Carte du réseau du métro"></div>
+        <aside class="place-card" id="card" hidden></aside>
+      </div>
+      <footer class="panel-foot">
+        <span class="foot-hint">Trait épais = plus d’incidents · cliquez pour le détail</span>
+        <div class="widths" id="widths"></div>
+      </footer>
+    </section>
+
+    <section class="panel side">
+      <div class="side-head">
+        <div class="field">
+          <label for="period">Période</label>
+          <div class="select"><select id="period"></select></div>
+          <button type="button" class="info-btn" id="info" aria-controls="info-panel" aria-expanded="false"
+                  aria-label="À propos de ce site">i</button>
+        </div>
+
+        <div class="field">
+          <span class="field-label" id="lbl-lignes">Ligne</span>
+          <div class="pills" id="lines" role="group" aria-labelledby="lbl-lignes"></div>
+        </div>
+
+        <div class="field-row">
+          <label class="switch">
+            <input type="checkbox" id="min5">
+            <span class="sw-track"><span class="sw-knob"></span></span>
+            <span class="sw-label">Interruptions de 5 min et plus</span>
+          </label>
+        </div>
+
+        <p class="side-dates" id="fresh"></p>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Vues">
+        <button type="button" role="tab" id="tab-heures" aria-controls="pane-heures" aria-selected="true">Heures</button>
+        <button type="button" role="tab" id="tab-stations" aria-controls="pane-stations" aria-selected="false" tabindex="-1">Stations</button>
+        <button type="button" role="tab" id="tab-troncons" aria-controls="pane-troncons" aria-selected="false" tabindex="-1">Tronçons</button>
+        <button type="button" role="tab" id="tab-causes" aria-controls="pane-causes" aria-selected="false" tabindex="-1">Causes</button>
+      </div>
+
+      <div class="pane" id="pane-heures" role="tabpanel" aria-labelledby="tab-heures">
+        <figure class="chart-block">
+          <figcaption><span class="chart-title">Incidents selon l’heure</span><span class="chart-sub">gris : heures de pointe</span></figcaption>
+          <div class="clocks">
+            <div class="clock-main" id="clock-all"></div>
+            <div class="clock-minis" id="clock-lines"></div>
+          </div>
+        </figure>
+      </div>
+
+      <div class="pane" id="pane-stations" role="tabpanel" aria-labelledby="tab-stations" hidden>
+        <ol class="list" id="where"></ol>
+      </div>
+
+      <div class="pane" id="pane-troncons" role="tabpanel" aria-labelledby="tab-troncons" hidden>
+        <ol class="list" id="troncons"></ol>
+      </div>
+
+      <div class="pane" id="pane-causes" role="tabpanel" aria-labelledby="tab-causes" hidden>
+        <ul class="list" id="why"></ul>
+      </div>
+
+      <div class="info-panel" id="info-panel" hidden>
+        <button type="button" class="close" id="info-close" aria-label="Fermer">×</button>
+        <p class="info-title">À propos de ce site</p>
+        <p class="info-author">Créé par <b>Evelyne Brie</b>, professeure adjointe en science politique
+          à l’Université de Montréal.</p>
+        <dl>
+          <dt>Compté</dt><dd>Incidents « trains » consignés par la STM, avec ou sans arrêt de service. Les incidents
+            en station qui ne touchent pas les trains sont exclus.</dd>
+          <dt>Durée</dt><dd>Heure de reprise moins heure de l’incident. Elle concorde avec la classe publiée pour
+            98 % des incidents ; sinon, le milieu de la classe est retenu.</dd>
+          <dt>Carte</dt><dd>Un tronçon compte les incidents survenus entre ses deux stations, plus une part de ceux
+            survenus à chacune d’elles.</dd>
+          <dt>Hors carte</dt><dd>Garages, ateliers et postes électriques n’ont pas de place sur la carte, mais
+            restent dans les totaux.</dd>
+          <dt>Conduite</dt><dd>Horaire planifié de la STM : à chaque heure, la somme des temps de parcours de tous
+            les trains prévus, appliqué à toute la période.</dd>
+          <dt>Seuil</dt><dd>Les indicateurs officiels de la STM ne retiennent que les interruptions de 5 minutes
+            et plus : c’est ce que fait l’interrupteur.</dd>
+          <dt>Délai</dt><dd>La STM publie une fois par mois, avec plusieurs semaines de retard : « 3 derniers mois
+            disponibles » compte à rebours depuis la dernière date publiée, pas depuis aujourd’hui.</dd>
+        </dl>
+        <p class="info-sources" id="footer"></p>
+        <p class="info-sources">Inspiration : Jean-François Godbout.</p>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div class="tip" id="tip" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

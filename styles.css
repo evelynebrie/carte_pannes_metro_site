@@ -1,0 +1,309 @@
+/* Pannes du métro de Montréal — tableau de bord, une seule vue */
+
+:root {
+  --tile: #eceae1;
+  --paper: #fbfaf6;
+  --ink: #15161a;
+  --ink-2: #54565c;
+  --muted: #8a8880;
+  --frame: #d9d5c8;
+  --frame-soft: #e8e4d8;
+  --plate-ink: #f4f2ea;
+  --flap: #26282d;
+  --flap-low: #1f2126;     /* lower half a shade darker, the way a real flap catches less light */
+  --focus: #2f6fed;
+  --display: "Bricolage Grotesque", "Archivo", system-ui, sans-serif;
+  --sans: "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --cell: 18px;
+  --flip: 24ms;            /* one flap; app.js uses the same value to step the letters */
+  --tab: #9b9890;          /* grey until a line is picked, then that line's colour */
+  --tab-ink: #fbfaf6;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { color-scheme: light; height: 100%; }
+body { height: 100%; margin: 0; display: flex; flex-direction: column; overflow: hidden;
+  color: var(--ink); font: 400 14.5px/1.5 var(--sans); -webkit-font-smoothing: antialiased;
+  background-color: #0b0c0e;
+  background-image: repeating-linear-gradient(90deg, rgba(255, 255, 255, .028) 0 1px, transparent 1px 72px),
+                    repeating-linear-gradient(0deg, rgba(255, 255, 255, .028) 0 1px, transparent 1px 72px); }
+a { color: inherit; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.skip { position: absolute; left: -9999px; top: 8px; background: var(--ink); color: #fff; padding: 10px 14px; z-index: 100; }
+.skip:focus { left: 12px; }
+
+/* ---------- app shell: fills the window, never scrolls ---------- */
+.app { flex: 1; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; padding: 12px 14px 14px; }
+.error { margin: 0; padding: 10px 14px; background: #fdeceb; border: 1px solid #efc6c0; color: #8a2b22; font-size: 13.5px; }
+.error code { font: 500 12.5px var(--mono); }
+.panel { background: var(--paper); border: 1px solid var(--frame); border-radius: 2px; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* no frame: the board sits straight on the page, with nothing marking it off */
+.panel.dark { background: transparent; border-color: transparent; padding: 12px 16px 12px; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* platform display: amber letters drawn as a grid of lit dots */
+.board-title { margin: 0 0 14px; text-align: center; text-transform: uppercase;
+  font: 700 clamp(13px, 2.9vw, 44px)/1.12 var(--mono); letter-spacing: .06em;
+  /* tight halo on the letters, then a wider glow */
+  filter: drop-shadow(0 0 3px rgba(255, 216, 96, .85)) drop-shadow(0 0 13px rgba(255, 195, 45, .45));
+  animation: tube 9s steps(1, end) infinite; }
+/* the frame has to name its colour: the rule below sets color:transparent so the dot grid can
+   be clipped to the letters, and a border with no colour of its own would take that transparent */
+.title-text { border: 2px solid #ffd24a; padding: .34em .6em; border-radius: 3px; }
+.title-text { position: relative; display: inline-block;
+  color: #ffd24a;                                     /* stands in where background-clip is unsupported */
+  background-image: radial-gradient(circle at 50% 50%, #ffd24a 45%, rgba(255, 210, 74, .17) 46%);
+  background-size: 4px 4px; }
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .title-text { -webkit-background-clip: text; background-clip: text; color: transparent; }
+}
+/* A second layer used to sit here: the base masked out three fixed bands (13.3 / 53.3 / 93.3 %)
+   and an ::after painted only those, flickering. That overlay never rendered, so the bands
+   stayed blank and the title permanently read "INCI ENTS DU MÉT O DE MONTRÉ L" — always the
+   same D, R and A. One layer now; the tired-lamp effect comes from @keyframes tube dipping
+   the whole title, which does work. */
+/* the whole sign dips the way a tired tube does */
+@keyframes tube {
+  0%, 34%, 35.1%, 67%, 68%, 100% { opacity: 1; }
+  34.5% { opacity: .78; }
+  67.4% { opacity: .86; }
+  67.7% { opacity: .7; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-title { animation: none; }
+}
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .board-title { -webkit-background-clip: text; background-clip: text; color: transparent; }
+}
+
+/* ---------- the flap board ---------- */
+.board { display: block; }
+.board-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 20px;
+  padding-bottom: calc(var(--cell) * .45); margin-bottom: calc(var(--cell) * .45);
+  border-bottom: 1px solid rgba(255, 255, 255, .09);
+  font: 500 10px/1.4 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: #7b7a74; }
+.board-head b { color: #d6d3c9; font-weight: 700; }
+.board-body { display: flex; align-items: stretch; }
+.board-rows { display: flex; flex-direction: column; gap: calc(var(--cell) * .18); flex: 1; }
+.board .row { display: flex; align-items: center; gap: calc(var(--cell) * .5); }
+.zone { display: flex; gap: calc(var(--cell) * .09); }
+.zone.value { margin-left: auto; }
+.flap { position: relative; flex: none; width: var(--cell); height: calc(var(--cell) * 1.5); perspective: calc(var(--cell) * 6);
+  /* 1.1 rather than .92: a monospace glyph advances about .6 em, so at the smaller size the
+     character filled barely half its cell and the board read as thin */
+  font: 700 calc(var(--cell) * 1.1)/1 var(--mono); color: #fffdf8; }
+.half, .leaf { position: absolute; left: 0; right: 0; height: 50%; overflow: hidden; background: var(--flap); }
+.top { top: 0; border-radius: 2px 2px 0 0; transform-origin: 50% 100%; }
+.bottom { bottom: 0; border-radius: 0 0 2px 2px; transform-origin: 50% 0; background: var(--flap-low); }
+.half span, .leaf span { position: absolute; left: 0; right: 0; height: 200%; line-height: calc(var(--cell) * 1.5); text-align: center; }
+.top span { top: 0; }
+.bottom span { bottom: 0; }
+.leaf { z-index: 2; visibility: hidden; backface-visibility: hidden; }
+.leaf.bottom { transform: rotateX(90deg); }
+.flap.flipping .leaf { visibility: visible; }
+.flap.fold .leaf.top { animation: fold-top calc(var(--flip) / 2) ease-in forwards; }
+.flap.fold .leaf.bottom { animation: fold-bottom calc(var(--flip) / 2) ease-out calc(var(--flip) / 2) forwards; }
+@keyframes fold-top { from { transform: rotateX(0deg); } to { transform: rotateX(-90deg); } }
+@keyframes fold-bottom { from { transform: rotateX(90deg); } to { transform: rotateX(0deg); } }
+.flap::after { content: ""; position: absolute; left: 0; right: 0; top: calc(50% - .5px); height: 1px; background: rgba(0, 0, 0, .55); z-index: 3; }
+.flap.blank .half, .flap.blank .leaf { background: transparent; }
+.flap.blank::after { display: none; }
+@media (prefers-reduced-motion: reduce) { .flap.fold .leaf.top, .flap.fold .leaf.bottom { animation: none; } }
+
+/* ---------- map + side column ---------- */
+/* a squarer map: the network is nearly square, so a wide frame only shows suburbs without metro */
+.grid { display: grid; gap: 12px; grid-template-columns: minmax(0, 1.2fr) minmax(420px, 1fr); min-height: 0; }
+.panel-map { overflow: hidden; }
+.map-wrap { position: relative; flex: 1; min-height: 0; }
+#map { height: 100%; background: #e7e4dc; }
+.panel-foot { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 18px;
+  padding: 8px 12px; border-top: 1px solid var(--frame-soft);
+  font: 500 10px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.widths { display: inline-flex; align-items: center; gap: 14px; }
+.widths span { display: inline-flex; align-items: center; gap: 6px; }
+.widths i { display: inline-block; width: 22px; background: #b3aea2; border-radius: 3px; }
+
+/* ---------- side column: title, filters, tabs ---------- */
+.side-head { flex: none; display: flex; flex-direction: column; gap: 7px; padding: 10px 12px 9px; border-bottom: 1px solid var(--frame-soft); }
+.field { display: flex; align-items: center; gap: 9px; }
+.field label, .field-label { font: 500 9.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); min-width: 46px; }
+/* the name always rides beside its colour: the dot alone did not read as a choice.
+   On a narrower column the buttons tighten instead of dropping the word. */
+@media (max-width: 1400px) {
+  .pills { gap: 3px; }
+  .pills button { padding: 4px 8px; font-size: 11.5px; gap: 5px; }
+  .pills .dot { width: 7px; height: 7px; }
+}
+.field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.select { position: relative; flex: 1; }
+.select::after { content: ""; position: absolute; right: 10px; top: 50%; width: 6px; height: 6px; margin-top: -4px;
+  border-right: 1.5px solid var(--ink); border-bottom: 1.5px solid var(--ink); transform: rotate(45deg); pointer-events: none; }
+.select select { width: 100%; appearance: none; -webkit-appearance: none; font: 500 13.5px var(--sans); color: var(--ink);
+  background: var(--paper); border: 1px solid var(--frame); border-radius: 2px; padding: 5px 26px 5px 9px; cursor: pointer; }
+.select select:hover { border-color: var(--ink); }
+/* one row, always: below a certain width the row scrolls rather than wrapping,
+   which would steal height from the panel underneath */
+.pills { display: inline-flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+.pills::-webkit-scrollbar { display: none; }
+.pills button { display: inline-flex; align-items: center; gap: 6px; background: var(--paper);
+  border: 1px solid var(--frame); border-radius: 999px; padding: 4px 11px; font-size: 12.5px;
+  color: var(--ink-2); cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
+.pills button:hover { border-color: var(--ink); color: var(--ink); }
+.pills button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.sw-track { width: 32px; height: 18px; border-radius: 999px; background: #cfcbbe; position: relative; transition: background .18s; flex: none; }
+.sw-knob { position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--paper);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .18s; }
+.switch input:checked + .sw-track { background: var(--ink); }
+.switch input:checked + .sw-track .sw-knob { transform: translateX(14px); }
+.switch input:focus-visible + .sw-track { outline: 2px solid var(--focus); outline-offset: 3px; }
+.info-btn { margin-left: auto; width: 20px; height: 20px; flex: none; border: 1px solid var(--frame); border-radius: 50%;
+  background: none; color: var(--muted); font: 700 11px/1 var(--mono); cursor: pointer; }
+.info-btn:hover, .info-btn[aria-expanded="true"] { color: var(--paper); background: var(--ink); border-color: var(--ink); }
+
+.side { position: relative; }
+.info-panel { position: absolute; inset: 0; z-index: 900; overflow: auto; background: var(--paper);
+  padding: 14px 16px 16px; border-left: 3px solid var(--ink); }
+.info-panel .close { position: absolute; top: 6px; right: 8px; border: 0; background: none; font-size: 20px; line-height: 1;
+  color: var(--muted); cursor: pointer; padding: 4px; }
+.info-title { margin: 0 0 10px; font: 500 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+.info-panel dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 14px; font-size: 12.5px; }
+.info-panel dt { font: 500 9.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding-top: 3px; }
+.info-panel dd { margin: 0; color: var(--ink-2); line-height: 1.45; }
+.info-author { margin: 0 0 12px; padding-bottom: 12px; border-bottom: 1px solid var(--frame-soft);
+  font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+.info-author b { font-family: var(--display); font-weight: 700; color: var(--ink); }
+.info-sources { margin: 12px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+.side-dates { margin: 0; font: 500 9.5px/1.4 var(--mono); color: var(--muted); }
+
+/* tabs wear the line colours */
+.tabs { flex: none; display: flex; gap: 2px; padding: 8px 8px 0; border-bottom: 1px solid var(--frame-soft);
+  overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { display: inline-flex; align-items: center; gap: 5px; background: none; border: 0; border-radius: 2px 2px 0 0;
+  padding: 7px clamp(6px, 1vw, 12px); font: 500 clamp(9px, .75vw, 10.5px) var(--mono); letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.tabs button::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--tab); flex: none; }
+.tabs button:hover { background: rgba(21, 22, 26, .05); color: var(--ink); }
+.tabs button[aria-selected="true"] { background: var(--tab); color: var(--tab-ink); }
+.tabs button[aria-selected="true"]::before { background: var(--tab-ink); opacity: .85; }
+.pane { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 12px; }
+.pane-note { margin: 0; font-size: 12px; color: var(--muted); }
+.pane-method dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; font-size: 13px; }
+.pane-method dt { font: 500 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+.pane-method dd { margin: 0; color: var(--ink-2); }
+
+.place-card { position: absolute; top: 12px; right: 12px; width: 290px; max-width: calc(100% - 24px); z-index: 800;
+  background: var(--paper); border: 1px solid var(--frame); border-radius: 2px; padding: 14px 16px 12px;
+  box-shadow: 0 22px 40px -28px rgba(14, 16, 20, .55); font-size: 13px; max-height: calc(100% - 24px); overflow: auto; }
+.place-card .close { position: absolute; top: 5px; right: 7px; border: 0; background: none; font-size: 20px; line-height: 1;
+  color: var(--muted); cursor: pointer; padding: 4px; }
+.place-card .close:hover { color: var(--ink); }
+.place-card .kicker { display: flex; align-items: center; gap: 6px; font: 500 9.5px var(--mono); letter-spacing: .14em;
+  text-transform: uppercase; color: var(--muted); }
+.place-card .name { font-family: var(--display); font-size: 17px; font-weight: 700; line-height: 1.15; letter-spacing: -.02em;
+  margin: 5px 22px 8px 0; }
+.place-card .big { font-size: 13px; color: var(--ink-2); }
+.place-card .big b { font: 700 23px/1 var(--mono); color: var(--ink); }
+.place-card .meta { color: var(--ink-2); font-size: 12px; }
+.place-card .sub { margin: 12px 0 4px; font: 500 9.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.place-card ul { list-style: none; margin: 0; padding: 0; }
+.place-card li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 12px; border-top: 1px solid var(--frame-soft); }
+.place-card li span:last-child { font: 500 12px var(--mono); color: var(--ink-2); }
+.place-card .fine { margin: 10px 0 0; font-size: 11px; line-height: 1.45; color: var(--muted); }
+
+/* ---------- charts ---------- */
+.chart-block { margin: 0; }
+.chart-block figcaption { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; margin-bottom: 6px; }
+.chart-title { font: 500 10px var(--mono); letter-spacing: .13em; text-transform: uppercase; color: var(--ink-2); }
+.chart-sub { font-size: 11px; color: var(--muted); }
+/* the small bar chart inside the station / segment card still uses these */
+.chart svg { display: block; overflow: visible; }
+.chart .band { fill: #e9e6dd; }
+.chart .grid { stroke: var(--frame-soft); }
+.chart .base { stroke: var(--frame); }
+.chart text { fill: var(--muted); font-family: var(--mono); font-size: 9.5px; }
+.chart .bar { fill: #2b2d33; }
+.chart .bar.on { fill: #000; }
+.chart .hit { fill: transparent; }
+
+/* ---------- the hour clock: the service day as a dial, 5 h at the top ---------- */
+.clocks { display: flex; align-items: center; gap: 14px; min-height: 0; }
+.clock-main { flex: none; }
+.clock-minis { flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; }
+.clock-minis:empty { display: none; }
+.mini { text-align: center; min-width: 0; }
+.mini svg { margin: 0 auto; }
+.mini-name { display: block; margin-top: 2px; font: 500 8.5px var(--mono); letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clock { display: block; overflow: visible; }
+.clock text { fill: var(--muted); font-family: var(--mono); font-size: 9.5px; }
+.clock .peak { fill: #e9e6dd; }
+.clock .wedge { fill: #2b2d33; }
+.clock .wedge.on { fill: #000; }
+.clock .hub { fill: none; stroke: var(--frame); }
+.clock .hit { fill: transparent; }
+.clock .big { font: 700 21px var(--mono); fill: var(--ink); }
+.clock .big-sub { font: 500 8px var(--mono); letter-spacing: .12em; fill: var(--muted); }
+
+/* ---------- lists ---------- */
+.list { list-style: none; margin: 0; padding: 0; }
+.list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) 80px 46px; align-items: center; gap: 10px;
+  padding: 7px 0; border-top: 1px solid var(--frame-soft); font-size: 13.5px; }
+.list li:first-child { border-top: 0; }
+.list li.no-rank { grid-template-columns: minmax(0, 1fr) 80px 46px; }
+.list .k { font: 500 11px var(--mono); color: var(--muted); }
+.list .nm { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.list .nm button { background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+.list .nm button:hover { text-decoration: underline; text-underline-offset: 3px; }
+.list .track { height: 4px; background: #e3dfd3; }
+.list .fill { display: block; height: 4px; background: #2b2d33; }
+.list .num { text-align: right; font: 500 13px var(--mono); color: var(--ink-2); }
+
+/* ---------- map chrome & tooltips ---------- */
+.leaflet-container { font: inherit; background: #e7e4dc; }
+.leaflet-control-zoom { border: 0 !important; box-shadow: none !important; }
+.leaflet-control-zoom a { border: 1px solid var(--frame) !important; background: var(--paper) !important; color: var(--ink) !important;
+  width: 26px !important; height: 26px !important; line-height: 24px !important; border-radius: 0 !important; }
+.leaflet-control-zoom a:first-child { border-bottom: 0 !important; }
+.leaflet-tooltip.tt { background: var(--paper); color: var(--ink); border: 1px solid var(--frame); border-radius: 2px;
+  box-shadow: 0 10px 22px -16px rgba(14, 16, 20, .6); padding: 6px 9px; font-size: 12.5px; }
+.leaflet-tooltip.tt::before { display: none; }
+.tt b { display: block; font-family: var(--display); font-weight: 700; }
+.tt span { color: var(--ink-2); }
+.leaflet-tooltip.lbl { background: none; border: 0; box-shadow: none; padding: 0;
+  font: 500 9.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink);
+  text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff; }
+.leaflet-tooltip.lbl::before { display: none; }
+.tip { position: fixed; pointer-events: none; z-index: 2000; background: var(--paper); color: var(--ink);
+  border: 1px solid var(--frame); border-radius: 2px; box-shadow: 0 10px 22px -16px rgba(14, 16, 20, .6);
+  padding: 6px 9px; font-size: 12.5px; }
+.tip b { display: block; font-family: var(--display); font-weight: 700; }
+.tip span { display: block; color: var(--ink-2); font-size: 11.5px; }
+
+/* ---------- small or short screens: let the page scroll again ---------- */
+@media (max-width: 1020px), (max-height: 620px) {
+  html, body { height: auto; overflow: auto; }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .map-wrap { min-height: 420px; }
+  .pane { max-height: 460px; }
+}
+@media (max-width: 780px) {
+  .app { padding: 10px 12px 12px; }
+  .panel.dark { padding: 12px 12px 10px; }
+  /* the one-row rule exists to protect the panel's height on a desktop; here the page scrolls
+     anyway, and keeping it on a phone simply hid the fourth line off the right edge */
+  .pills { flex-wrap: wrap; overflow-x: visible; }
+  .field { align-items: flex-start; }
+  .field > label, .field-label { padding-top: 5px; }
+  .panel-foot { gap: 4px 12px; }
+  .list li { grid-template-columns: 20px minmax(0, 1fr) 44px; }
+  .list li.no-rank { grid-template-columns: minmax(0, 1fr) 44px; }
+  .list .track { display: none; }
+  .place-card { position: static; width: auto; max-width: none; margin: 8px; box-shadow: none; }
+}
