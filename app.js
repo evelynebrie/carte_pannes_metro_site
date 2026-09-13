@@ -540,13 +540,26 @@
       svg.append(svText(x, y + 3, hh(hours[k]), 'middle'));
     }
     if (center != null) {
-      const c = svText(half, half + (centerSub ? -1 : 5), center, 'middle');
-      c.setAttribute('class', 'big');
-      svg.append(c);
+      // The figure has to fit the hub, which scales with the dial. A fixed size held for "828"
+      // but "27 907" ran straight through the ring, so derive it from the room available and
+      // the number of characters: a monospace glyph advances about .6 em.
+      const room = r0 * 2 * 0.84;
+      const fs = Math.max(8, Math.min(size * 0.115, room / (String(center).length * 0.62)));
+      const subFs = Math.max(6, Math.min(9, fs * 0.4));
       // below ~170 px the hub is narrower than the word, which then reads as "NCIDENT"
-      if (centerSub && size >= 170) {
-        const s = svText(half, half + 12, centerSub, 'middle');
+      const shown = centerSub && size >= 170;
+      // digits sit on their cap height, roughly .35 em above the baseline
+      const base = half + fs * 0.35 - (shown ? subFs * 0.8 : 0);
+      const c = svText(half, base, center, 'middle');
+      c.setAttribute('class', 'big');
+      c.style.fontSize = fs.toFixed(1) + 'px';
+      svg.append(c);
+      if (shown) {
+        // the gap has to clear the digits' own descender room, so it follows the figure's size
+        // rather than the caption's: measured from subFs alone, the two blocks overlapped
+        const s = svText(half, base + fs * 0.3 + subFs * 1.45, centerSub, 'middle');
         s.setAttribute('class', 'big-sub');
+        s.style.fontSize = subFs.toFixed(1) + 'px';
         svg.append(s);
       }
     }
